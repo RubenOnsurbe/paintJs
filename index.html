@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paint.js</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #222;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #fce300;
+            font-size: 12px;
+            font-weight: 600;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+
+            img {
+                width: 16px;
+                height: auto;
+            }
+        }
+
+        header {
+            grid-area: header;
+            background: silver;
+            padding: 2px;
+
+            button {
+                border: 0;
+                background: transparent;
+
+                &:hover {
+                    box-shadow:
+                        1px 1px black,
+                        inset -1px -1px gray,
+                        inset 1px 1px white;
+                }
+            }
+        }
+
+        aside {
+            grid-area: aside;
+            background: silver;
+            width: 52px;
+            padding-top: 2px;
+
+            nav {
+                display: flex;
+                flex-wrap: wrap;
+            }
+
+            button {
+                width: 24px;
+                height: 24px;
+
+                background: #bdbdbd url('./icons/draw.png') no-repeat center;
+
+                border: 1.5px solid #eee;
+                border-right-color: #000;
+                border-bottom-color: #000;
+
+                image-rendering: pixelated;
+
+                &.active {
+                    border-color: #000;
+                    border-right-color: #eee;
+                    border-bottom-color: #eee;
+                }
+            }
+        }
+
+        #erase-btn {
+            background-image: url('./icons/erase.png');
+            image-rendering: pixelated;
+        }
+
+        #rectangle-btn {
+            background-image: url('./icons/rectangle.png');
+            image-rendering: pixelated;
+        }
+
+        #ellipse-btn {
+            background-image: url('./icons/ellipse.png');
+            image-rendering: pixelated;
+        }
+
+        #picker-btn {
+            background-image: url('./icons/picker.png');
+            image-rendering: pixelated;
+        }
+
+        #clear-btn {
+            background-image: url('./icons/trash.png');
+            background-size: 20px;
+        }
+
+        main {
+            grid-area: main;
+            padding: 16px;
+        }
+
+        canvas {
+            background: #fff;
+        }
+
+        footer {
+            grid-area: footer;
+            background: silver;
+            padding: 4px;
+        }
+
+        #container {
+            border: 1px solid #808080;
+            display: grid;
+            grid-template-areas:
+                "header header header"
+                "aside main main"
+                "footer footer footer";
+        }
+    </style>
+    <script type="module">
+        //CONSTANTS
+        const MODES = {
+            DRAW: 'draw',
+            ERASE: 'erase',
+            RECTANGLE: 'rectangle',
+            ELLIPSE: 'ellipse',
+            PICKER: 'picker'
+        }
+
+        //UTILITIES
+        const $ = el => document.querySelector(el)
+        const $$ = el => document.querySelectorAll(el)
+
+        //ELEMENTS
+        const $canvas = $('#canvas')
+        const $colorPicker = $('#color-picker')
+        const $rangePicker = $('#range-picker')
+        const $rangeSpan = $('#range-span')
+        const downloadBtn = $('#download-btn')
+        const drawBtn = $('#draw-btn')
+        const eraseBtn = $('#erase-btn')
+        const rectangleBtn = $('#rectangle-btn')
+        const ellipseBtn = $('#ellipse-btn')
+        const pickerBtn = $('#picker-btn')
+        const clearBtn = $('#clear-btn')
+
+        const ctx = $canvas.getContext('2d')
+        canvas.style.cursor = 'url("./cursors/pincel.png") 0 24, auto'
+        ctx.lineWidth = 2
+
+        //STATE
+        let isDrawing = false
+        let isShiftPressed = false
+        let startX, startY
+        let lastX = 0
+        let lastY = 0
+        let mode = MODES.DRAW
+        let imageData
+
+        //EVENTS
+        $canvas.addEventListener('mousedown', startDrawing)
+        $canvas.addEventListener('mousemove', draw)
+        $canvas.addEventListener('mouseup', stopDrawing)
+        $canvas.addEventListener('mouseleave', stopDrawing)
+        clearBtn.addEventListener('click', clearCanvas)
+        rectangleBtn.addEventListener('click', () => [setMode(MODES.RECTANGLE)])
+        eraseBtn.addEventListener('click', () => [setMode(MODES.ERASE)])
+        drawBtn.addEventListener('click', () => [setMode(MODES.DRAW)])
+        ellipseBtn.addEventListener('click', () => [setMode(MODES.ELLIPSE)])
+        pickerBtn.addEventListener('click', () => [setMode(MODES.PICKER)])
+        $colorPicker.addEventListener('change', changeColor)
+        $rangePicker.addEventListener('change', changeRange)
+        document.addEventListener('keydown', handleKeyDown)
+        document.addEventListener('keyup', handleKeyUp)
+        downloadBtn.addEventListener('click', downloadCanvasAsJPG)
+
+        //METHODS
+        function startDrawing(e) {
+            isDrawing = true
+
+            const { offsetX, offsetY } = e;
+
+            // Guardar cords iniciales
+            [startX, startY] = [offsetX, offsetY];
+            [lastX, lastY] = [offsetX, offsetY];
+
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        }
+
+
+        function draw(e) {
+            if (!isDrawing) return
+            const { offsetX, offsetY } = e
+
+
+            if (mode == MODES.DRAW || mode == MODES.ERASE) {
+                //Comenzar un trazado
+
+                ctx.beginPath()
+
+                //Mover el trazar a la posición actual
+                ctx.moveTo(lastX, lastY)
+
+                //Dibujar una línea a la posición actual
+                ctx.lineTo(offsetX, offsetY)
+
+                ctx.stroke()
+
+                    ;[lastX, lastY] = [offsetX, offsetY]
+                return
+            }
+            if (mode == MODES.RECTANGLE) {
+                ctx.putImageData(imageData, 0, 0)
+
+                let width = offsetX - startX
+                let height = offsetY - startY
+
+                if (isShiftPressed) {
+                    const sideLength = Math.min(Math.abs(width), Math.abs(height))
+                    width = width > 0 ? sideLength : -sideLength
+                    height = height > 0 ? sideLength : -sideLength
+                }
+
+                ctx.beginPath()
+
+                ctx.rect(startX, startY, width, height)
+                ctx.stroke()
+            }
+
+            if (mode == MODES.ELLIPSE) {
+                ctx.putImageData(imageData, 0, 0)
+
+                let width = offsetX - startX
+                let height = offsetY - startY
+
+                if (isShiftPressed) {
+                    const squareSize = Math.min(Math.abs(width), Math.abs(height))
+                    width = Math.sign(width) * squareSize
+                    height = Math.sign(height) * squareSize
+                }
+
+                ctx.beginPath()
+
+                ctx.ellipse(startX + width / 2, startY + height / 2, Math.abs(width / 2), Math.abs(height / 2), 0, 0, Math.PI * 2)
+                ctx.stroke()
+            }
+
+
+
+        }
+
+        function stopDrawing() {
+            isDrawing = false
+        }
+
+        function changeColor() {
+            const { value } = $colorPicker
+            ctx.strokeStyle = value
+        }
+
+        function changeRange() {
+            const { value } = $rangePicker
+            ctx.lineWidth = value
+            $rangeSpan.textContent = value
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, $canvas.width, $canvas.height)
+        }
+
+        async function setMode(newMode) {
+            let previusMode = mode
+            mode = newMode
+
+            $('button.active')?.classList.remove('active')
+
+            if (mode == MODES.DRAW) {
+                drawBtn.classList.add('active')
+                canvas.style.cursor = 'url("./cursors/pincel.png") 0 24, auto'
+                ctx.globalCompositeOperation = 'source-over'
+                return
+            }
+
+            if (mode == MODES.ERASE) {
+                eraseBtn.classList.add('active')
+                canvas.style.cursor = 'url("./cursors/erase.png")0 12, auto'
+                ctx.globalCompositeOperation = 'destination-out'
+                return
+            }
+
+            if (mode == MODES.RECTANGLE) {
+                rectangleBtn.classList.add('active')
+                canvas.style.cursor = 'url("./cursors/point.png") 0 24, auto'
+                ctx.globalCompositeOperation = 'source-over'
+                return
+            }
+
+            if (mode == MODES.ELLIPSE) {
+                ellipseBtn.classList.add('active')
+                canvas.style.cursor = 'url("./cursors/point.png") 0 24, auto'
+                ctx.globalCompositeOperation = 'source-over'
+                return
+            }
+
+            if (mode == MODES.PICKER) {
+                pickerBtn.classList.add('active')
+                const eyedropper = new window.EyeDropper()
+
+                try {
+                    const result = await eyedropper.open()
+                    const { sRGBHex } = result
+                    $colorPicker.value = sRGBHex
+                    ctx.strokeStyle = sRGBHex
+                    setMode(previusMode)
+                } catch (error) {
+                }
+                return
+            }
+        }
+
+        function handleKeyDown(e) {
+            if (e.key === 'Shift') {
+                isShiftPressed = true
+            }
+        }
+
+        function handleKeyUp(e) {
+            if (e.key === 'Shift') {
+                isShiftPressed = false
+            }
+        }
+
+        function downloadCanvasAsJPG() {
+            // Crear un canvas temporal
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // Establecer el tamaño del canvas temporal igual al original
+            tempCanvas.width = $canvas.width;
+            tempCanvas.height = $canvas.height;
+
+            // Dibujar un fondo blanco en el canvas temporal
+            tempCtx.fillStyle = '#ffffff';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+            // Copiar el contenido del canvas original al temporal
+            tempCtx.drawImage($canvas, 0, 0);
+
+            // Crear un enlace temporal para descargar la imagen
+            const link = document.createElement('a');
+            link.download = 'dibujo.jpg';
+            link.href = tempCanvas.toDataURL('image/jpeg', 0.85);
+            link.click();
+        }
+
+    </script>
+</head>
+
+<body>
+    <h1>
+        <img src="./icon.png" alt="Paint.js">
+        Paint.js
+    </h1>
+    <div id="container">
+        <header>
+            <button id="download-btn">Descargar Dibujo</button>
+        </header>
+
+        <aside>
+            <nav>
+                <button class="active" id="draw-btn" title="Pincel"> </button>
+                <button id="erase-btn" title="Goma"> </button>
+                <button id="rectangle-btn" title="Rectangulo"></button>
+                <button id="ellipse-btn" title="Ellipse"></button>
+                <button id="picker-btn" title="Capturar Color"></button>
+                <button id="clear-btn" title="Borrar"></button>
+            </nav>
+        </aside>
+        <main>
+            <canvas id="canvas" width="610" height="300"></canvas>
+        </main>
+        <footer>
+            <input type="color" id="color-picker" value="#00000">
+            <span id="range-span">2</span>
+            <input id="range-picker" type="range" min="1" max="10" value="2">
+        </footer>
+    </div>
+</body>
+
+</html>
